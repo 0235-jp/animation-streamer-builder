@@ -1,0 +1,40 @@
+export type MotionType =
+  | 'idle'
+  | 'idleToSpeech'
+  | 'speechLoop'
+  | 'speechToIdle'
+
+export interface ClipAsset {
+  id: string
+  file: File
+  url: string
+  name: string
+  duration: number
+  type: MotionType
+}
+
+export interface AudioSegment {
+  id: string
+  kind: 'idle' | 'talk'
+  start: number
+  duration: number
+}
+
+export interface TimelinePlacement {
+  clip: ClipAsset
+  start: number
+}
+
+export interface TalkPlan {
+  segmentId: string
+  videoStart: number
+  videoEnd: number
+  audioStart: number
+  audioDuration: number
+}
+
+export interface TimelinePlan {
+  placements: TimelinePlacement[]
+  talkPlans: TalkPlan[]
+  totalDuration: number
+}
