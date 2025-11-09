@@ -7,43 +7,44 @@ import type {
   TimelinePlacement,
 } from '../types'
 
+const EPSILON = 1e-2
+
 interface ClipLibrary {
   idle: ClipAsset[]
   idleToSpeech: ClipAsset[]
-  speechLoop: ClipAsset[]
+  speechLoopLarge: ClipAsset[]
+  speechLoopSmall: ClipAsset[]
   speechToIdle: ClipAsset[]
-}
-
-const nextIndex = (counter: Record<MotionType, number>, type: MotionType) => {
-  const value = counter[type]
-  counter[type] = value + 1
-  return value
 }
 
 export const buildTimelinePlan = (segments: AudioSegment[], clips: ClipAsset[]): TimelinePlan => {
   const library = groupClips(clips)
   if (!library.idle.length) throw new Error('Idle clips are required')
-  if (!library.speechLoop.length) throw new Error('Speech-loop clips are required')
+  if (!library.speechLoopLarge.length && !library.speechLoopSmall.length) {
+    throw new Error('Speech-loop clips are required')
+  }
 
   const placements: TimelinePlacement[] = []
   const talkPlans: TalkPlan[] = []
   let videoCursor = 0
   let previousKind: 'idle' | 'talk' = 'idle'
 
-  const counters: Record<MotionType, number> = {
-    idle: 0,
-    idleToSpeech: 0,
-    speechLoop: 0,
-    speechToIdle: 0,
+  const pickRandomClip = (list: ClipAsset[]): ClipAsset => {
+    const index = Math.floor(Math.random() * list.length)
+    return list[index]
+  }
+
+  const placeClip = (clip: ClipAsset): ClipAsset => {
+    placements.push({ clip, start: videoCursor })
+    videoCursor += clip.duration
+    return clip
   }
 
   const takeClip = (type: MotionType): ClipAsset => {
     const list = library[type]
     if (!list.length) throw new Error(`Missing clip for state: ${type}`)
-    const clip = list[nextIndex(counters, type) % list.length]
-    placements.push({ clip, start: videoCursor })
-    videoCursor += clip.duration
-    return clip
+    const clip = pickRandomClip(list)
+    return placeClip(clip)
   }
 
   const maybeTakeClip = (type: MotionType): ClipAsset | null => {
@@ -51,10 +52,31 @@ export const buildTimelinePlan = (segments: AudioSegment[], clips: ClipAsset[]):
     return takeClip(type)
   }
 
+  const takeSpeechLoopClip = (remaining: number): ClipAsset => {
+    const pickFittableClip = (pool: ClipAsset[]): ClipAsset | null => {
+      if (!pool.length) return null
+      const candidates = pool.filter((clip) => clip.duration <= remaining + EPSILON)
+      if (!candidates.length) return null
+      return pickRandomClip(candidates)
+    }
+
+    const largeClip = pickFittableClip(library.speechLoopLarge)
+    if (largeClip) return placeClip(largeClip)
+
+    const smallClip = pickFittableClip(library.speechLoopSmall)
+    if (smallClip) return placeClip(smallClip)
+
+    if (library.speechLoopSmall.length) return takeClip('speechLoopSmall')
+    if (library.speechLoopLarge.length) return takeClip('speechLoopLarge')
+    throw new Error('Speech-loop clips are required')
+  }
+
   const coverSegment = (segment: AudioSegment) => {
     let covered = 0
-    while (covered + 1e-2 < segment.duration) {
-      const clip = takeClip(segment.kind === 'idle' ? 'idle' : 'speechLoop')
+    while (covered + EPSILON < segment.duration) {
+      const remaining = segment.duration - covered
+      const clip =
+        segment.kind === 'idle' ? takeClip('idle') : takeSpeechLoopClip(remaining)
       covered += clip.duration
     }
   }
@@ -107,7 +129,8 @@ export const groupClips = (clips: ClipAsset[]): ClipLibrary =>
     {
       idle: [],
       idleToSpeech: [],
-      speechLoop: [],
+      speechLoopLarge: [],
+      speechLoopSmall: [],
       speechToIdle: [],
     }
   )

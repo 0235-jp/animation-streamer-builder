@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import type { FFmpeg as FFmpegInstance } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
+import JSZip from 'jszip'
 import './App.css'
 import {
   analyzeAudio,
@@ -16,15 +17,135 @@ import type { ClipAsset, MotionType, TimelinePlan } from './types'
 const motionLabels: Record<MotionType, string> = {
   idle: '待機',
   idleToSpeech: '待機→発話',
-  speechLoop: '発話→発話',
+  speechLoopLarge: '発話→発話(大)',
+  speechLoopSmall: '発話→発話(小)',
   speechToIdle: '発話→待機',
+}
+
+const videoTypeManifestFile = 'video_types.json'
+
+const isMotionType = (value: unknown): value is MotionType =>
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(motionLabels, value)
+
+const normalizeManifestKey = (value: string): string | null => {
+  const normalized = value
+    .trim()
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .join('/')
+    .toLowerCase()
+  return normalized || null
+}
+
+const parseVideoTypesManifest = (text: string): Map<string, MotionType> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error('video_types.json が正しい JSON ではありません')
+  }
+
+  const map = new Map<string, MotionType>()
+  const addMapping = (fileName: unknown, typeValue: unknown) => {
+    if (typeof fileName !== 'string' || !fileName.trim()) {
+      throw new Error('video_types.json の各エントリには file プロパティが必要です')
+    }
+    if (!isMotionType(typeValue)) {
+      throw new Error(`video_types.json に未対応の種別 "${String(typeValue)}" が指定されています (${fileName})`)
+    }
+    const normalizedPath = normalizeManifestKey(fileName)
+    if (!normalizedPath) {
+      throw new Error(`video_types.json のファイル名 "${fileName}" を解釈できません`)
+    }
+    map.set(normalizedPath, typeValue)
+    const base = normalizedPath.split('/').pop()
+    if (base && base !== normalizedPath) {
+      map.set(base, typeValue)
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== 'object') {
+        throw new Error('video_types.json の各エントリは { file, type } 形式で記述してください')
+      }
+      addMapping(
+        (entry as { file?: unknown }).file,
+        (entry as { type?: unknown }).type
+      )
+    }
+    return map
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    const manifestObj = parsed as { [key: string]: unknown; videos?: unknown }
+    if (Array.isArray(manifestObj.videos)) {
+      for (const entry of manifestObj.videos) {
+        if (!entry || typeof entry !== 'object') {
+          throw new Error('video_types.json の videos 配列は { file, type } オブジェクトで構成してください')
+        }
+        addMapping(
+          (entry as { file?: unknown }).file,
+          (entry as { type?: unknown }).type
+        )
+      }
+      return map
+    }
+    if (manifestObj.videos !== undefined) {
+      throw new Error('video_types.json の videos プロパティは配列である必要があります')
+    }
+    for (const [fileName, typeValue] of Object.entries(manifestObj)) {
+      addMapping(fileName, typeValue)
+    }
+    return map
+  }
+
+  throw new Error('video_types.json の形式が正しくありません')
+}
+
+const readVideoTypesManifest = async (entry: JSZip.JSZipObject) =>
+  parseVideoTypesManifest(await entry.async('string'))
+
+const lookupManifestType = (map: Map<string, MotionType>, entryName: string, derivedName: string) => {
+  const normalizedEntry = normalizeManifestKey(entryName)
+  if (normalizedEntry && map.has(normalizedEntry)) {
+    return map.get(normalizedEntry)
+  }
+  const normalizedBase = normalizeManifestKey(derivedName)
+  if (normalizedBase && map.has(normalizedBase)) {
+    return map.get(normalizedBase)
+  }
+  return undefined
+}
+
+interface ClipCandidate {
+  file: File
+  typeHint?: MotionType
 }
 
 const isAudioFile = (file: File) =>
   file.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|ogg)$/i.test(file.name)
 
-const isVideoFile = (file: File) =>
-  file.type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name)
+const videoExtensionPattern = /\.(mp4|webm|mov)$/i
+
+const isVideoFile = (file: File) => file.type.startsWith('video/') || videoExtensionPattern.test(file.name)
+
+const isZipFile = (file: File) => file.type === 'application/zip' || /\.zip$/i.test(file.name)
+
+const guessVideoMimeType = (name: string) => {
+  const ext = name.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'mp4':
+      return 'video/mp4'
+    case 'webm':
+      return 'video/webm'
+    case 'mov':
+      return 'video/quicktime'
+    default:
+      return 'video/mp4'
+  }
+}
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -58,6 +179,31 @@ const loadFfmpegConstructor = async (): Promise<new () => FFmpegInstance> => {
     }
   }
   throw new Error('FFmpeg の読み込みに失敗しました')
+}
+
+const extractZipVideos = async (files: File[]): Promise<ClipCandidate[]> => {
+  const extracted: ClipCandidate[] = []
+  for (const zipFile of files) {
+    const zip = await JSZip.loadAsync(await zipFile.arrayBuffer())
+    const manifestEntry = Object.values(zip.files).find(
+      (entry) => !entry.dir && entry.name.split('/').pop()?.toLowerCase() === videoTypeManifestFile
+    )
+    const manifestMap = manifestEntry ? await readVideoTypesManifest(manifestEntry) : new Map<string, MotionType>()
+    const entries = Object.values(zip.files).filter(
+      (entry) => !entry.dir && videoExtensionPattern.test(entry.name)
+    )
+    for (const entry of entries) {
+      const buffer = (await entry.async('arraybuffer')) as ArrayBuffer
+      const baseNameSegments = entry.name.split('/').filter(Boolean)
+      const baseName = baseNameSegments[baseNameSegments.length - 1] ?? entry.name
+      const derivedName = baseName || `clip_${Date.now()}`
+      const type = guessVideoMimeType(derivedName)
+      const extractedFile = new File([buffer], derivedName, { type, lastModified: Date.now() })
+      const typeHint = lookupManifestType(manifestMap, entry.name, derivedName)
+      extracted.push({ file: extractedFile, typeHint })
+    }
+  }
+  return extracted
 }
 
 function App() {
@@ -226,16 +372,29 @@ function App() {
   }
 
   const processClipFiles = async (files: File[]) => {
-    const videoFiles = files.filter(isVideoFile)
-    if (!videoFiles.length) {
-      setVideoError('動画ファイルのみアップロードできます')
+    const zipFiles = files.filter(isZipFile)
+    const videoFiles = files.filter((file) => !isZipFile(file) && isVideoFile(file))
+    if (!zipFiles.length && !videoFiles.length) {
+      setVideoError('動画または ZIP ファイルのみアップロードできます')
       return
     }
-    setVideoStatus('動画メタデータを読み込み中...')
+    setVideoStatus(zipFiles.length ? 'ZIP を展開中...' : '動画メタデータを読み込み中...')
     setVideoError(null)
     resetOutput()
     try {
-      const assets = await Promise.all(videoFiles.map((file) => loadClipAsset(file, 'idle')))
+      const extractedVideos = zipFiles.length ? await extractZipVideos(zipFiles) : []
+      const directVideos: ClipCandidate[] = videoFiles.map((file) => ({ file }))
+      const allVideos: ClipCandidate[] = [...directVideos, ...extractedVideos]
+      if (!allVideos.length) {
+        setVideoError('ZIP 内に動画ファイルが見つかりませんでした')
+        return
+      }
+      if (zipFiles.length) {
+        setVideoStatus('動画メタデータを読み込み中...')
+      }
+      const assets = await Promise.all(
+        allVideos.map(({ file, typeHint }) => loadClipAsset(file, typeHint ?? 'idle'))
+      )
       setClips((prev) => [...prev, ...assets])
     } catch (error) {
       setVideoError(error instanceof Error ? error.message : '動画の読み込みに失敗しました')
@@ -370,7 +529,7 @@ function App() {
           <p className="eyebrow">Cloudflare Pages ready</p>
           <h1>Animation Streamer Builder</h1>
           <p className="lede">
-            音声のボリュームから発話状態を検出し、待機/遷移/発話モーション動画を組み合わせて 1 キャラクターの連続発話
+            音声のボリュームから発話状態を検出し、待機/遷移/発話(大/小)モーション動画を組み合わせて 1 キャラクターの連続発話
             MP4 を生成します。
           </p>
         </div>
@@ -450,7 +609,7 @@ function App() {
         <div className="panel-header">
           <div>
             <h2>2. モーションクリップ</h2>
-            <p>待機/遷移/発話の各カテゴリに最低 1 本ずつ登録してください。</p>
+            <p>待機/遷移/発話(大/小)の各カテゴリに最低 1 本ずつ登録してください。</p>
           </div>
           {videoStatus && <span className="status">{videoStatus}</span>}
         </div>
@@ -462,11 +621,11 @@ function App() {
           onDrop={handleClipDrop}
         >
           <p className="dropzone-title">動画をまとめてドラッグ＆ドロップ</p>
-          <p className="dropzone-sub">またはクリックして追加（あとでカテゴリを割り当て）</p>
+          <p className="dropzone-sub">またはクリックして追加（ZIP で一括アップロードも可能／あとでカテゴリを割り当て）</p>
           <input
             ref={clipInputRef}
             type="file"
-            accept="video/mp4,video/webm,video/quicktime"
+            accept="video/mp4,video/webm,video/quicktime,application/zip,.zip"
             multiple
             hidden
             onChange={handleClipChange}

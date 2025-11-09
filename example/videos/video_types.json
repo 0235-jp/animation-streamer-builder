@@ -1,0 +1,9 @@
+{
+  "videos": [
+    { "file": "待機.mp4", "type": "idle" },
+    { "file": "待機_発話.mp4", "type": "idleToSpeech" },
+    { "file": "発話_小.mp4", "type": "speechLoopSmall" },
+    { "file": "発話_大.mp4", "type": "speechLoopLarge" },
+    { "file": "発話_待機.mp4", "type": "speechToIdle" }
+  ]
+}

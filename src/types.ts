@@ -1,7 +1,8 @@
 export type MotionType =
   | 'idle'
   | 'idleToSpeech'
-  | 'speechLoop'
+  | 'speechLoopLarge'
+  | 'speechLoopSmall'
   | 'speechToIdle'
 
 export interface ClipAsset {

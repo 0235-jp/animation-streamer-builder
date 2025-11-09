@@ -2,6 +2,8 @@ import type { AudioSegment, TalkPlan } from '../types'
 
 const WINDOW_SIZE_SEC = 0.08
 const SILENCE_HOLD_BLOCKS = 3
+const MIN_SEGMENT_DURATION_SEC = 0.05
+const TALK_GAP_TOLERANCE_SEC = 0.05
 
 export interface AudioAnalysisResult {
   buffer: AudioBuffer
@@ -63,7 +65,7 @@ export async function analyzeAudio(file: File): Promise<AudioAnalysisResult> {
 
   const flushSegment = (endTime: number) => {
     const duration = endTime - currentStart
-    if (duration <= 0.05) {
+    if (duration <= MIN_SEGMENT_DURATION_SEC) {
       currentStart = endTime
       return
     }
@@ -111,9 +113,11 @@ export async function analyzeAudio(file: File): Promise<AudioAnalysisResult> {
     })
   }
 
+  const normalizedSegments = rebuildSegmentIds(mergeAdjacentTalkSegments(segments, TALK_GAP_TOLERANCE_SEC))
+
   return {
     buffer: audioBuffer,
-    segments,
+    segments: normalizedSegments,
     rmsValues,
     windowDuration,
     talkThreshold,
@@ -206,3 +210,30 @@ const writeString = (view: DataView, offset: number, text: string) => {
 }
 
 export const formatSeconds = (value: number) => `${value.toFixed(2)}s`
+
+const mergeAdjacentTalkSegments = (segments: AudioSegment[], gapTolerance: number) => {
+  if (!segments.length) return segments
+  const merged: AudioSegment[] = []
+  for (const segment of segments) {
+    if (!merged.length) {
+      merged.push({ ...segment })
+      continue
+    }
+    const prev = merged[merged.length - 1]
+    const prevEnd = prev.start + prev.duration
+    const gap = segment.start - prevEnd
+    if (segment.kind === 'talk' && prev.kind === 'talk' && gap <= gapTolerance + 1e-6) {
+      const newEnd = segment.start + segment.duration
+      prev.duration = newEnd - prev.start
+      continue
+    }
+    merged.push({ ...segment })
+  }
+  return merged
+}
+
+const rebuildSegmentIds = (segments: AudioSegment[]): AudioSegment[] =>
+  segments.map((segment, index) => ({
+    ...segment,
+    id: `${segment.kind}-${index}`,
+  }))

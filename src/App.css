@@ -345,9 +345,14 @@ button:disabled {
   color: #a7f3d0;
 }
 
-.badge-speechLoop {
-  background: rgba(248, 113, 113, 0.2);
-  color: #fecaca;
+.badge-speechLoopLarge {
+  background: rgba(248, 113, 113, 0.25);
+  color: #fee2e2;
+}
+
+.badge-speechLoopSmall {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fde68a;
 }
 
 .badge-speechToIdle {
