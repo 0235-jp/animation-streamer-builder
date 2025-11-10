@@ -798,7 +798,6 @@ const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => getInitialTtsP
     <div className="app">
       <header>
         <div>
-          <p className="eyebrow">Cloudflare Pages ready</p>
           <h1>Animation Streamer Builder</h1>
           <p className="lede">
             音声のボリュームから発話状態を検出し、待機/遷移/発話(大/小)モーション動画を組み合わせて 1 キャラクターの連続発話
