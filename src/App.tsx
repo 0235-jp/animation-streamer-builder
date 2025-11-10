@@ -571,7 +571,7 @@ const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => getInitialTtsP
         })
       }
       await processAudioFile(file)
-      setTtsStatus('生成した音声を解析にセットしました')
+      setTtsStatus(null)
       setPendingAutoRender(Boolean(options?.autoRender))
     } catch (error) {
       setTtsStatus(null)
@@ -806,10 +806,76 @@ const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => getInitialTtsP
         </div>
       </header>
 
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>1. モーションクリップ</h2>
+            <p>待機/遷移/発話(大/小)の各カテゴリに最低 1 本ずつ登録してください。</p>
+          </div>
+          {videoStatus && <span className="status">{videoStatus}</span>}
+        </div>
+        {videoError && <p className="status error">{videoError}</p>}
+        <div
+          className="dropzone small central-drop"
+          onClick={handleClipZoneClick}
+          onDragOver={handleClipDragOver}
+          onDrop={handleClipDrop}
+        >
+          <p className="dropzone-title">動画をまとめてドラッグ＆ドロップ</p>
+          <p className="dropzone-sub">またはクリックして追加（ZIP で一括アップロードも可能／あとでカテゴリを割り当て）</p>
+          <input
+            ref={clipInputRef}
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime,application/zip,.zip"
+            multiple
+            hidden
+            onChange={handleClipChange}
+          />
+        </div>
+        {clips.length === 0 ? (
+          <p className="empty">動画がまだありません。複数ファイルをまとめて追加できます。</p>
+        ) : (
+          <div className="table-wrapper scrollable">
+            <table>
+              <thead>
+                <tr>
+                  <th>名前</th>
+                  <th>長さ</th>
+                  <th>種別</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {clips.map((clip) => (
+                  <tr key={clip.id}>
+                    <td>{clip.name}</td>
+                    <td>{formatSeconds(clip.duration)}</td>
+                    <td>
+                      <select value={clip.type} onChange={(event) => updateClipType(clip.id, event.target.value as MotionType)}>
+                        {Object.entries(motionLabels).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <button className="ghost" onClick={() => removeClip(clip.id)}>
+                        削除
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       <section className="panel speech-panel">
         <div className="panel-header">
           <div>
-            <h2>1. 音声準備</h2>
+            <h2>2. 音声準備</h2>
             <p>音声ファイルをアップロードするか、テキストから音声を生成します。</p>
           </div>
           <div className="panel-header-tags">
@@ -977,14 +1043,6 @@ const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => getInitialTtsP
               <button
                 type="button"
                 className="primary-button"
-                onClick={() => handleTtsGenerate()}
-                disabled={ttsBusy || !ttsText.trim()}
-              >
-                {ttsBusy ? '生成中...' : '音声を生成'}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
                 onClick={() => handleTtsGenerate({ autoRender: true })}
                 disabled={ttsBusy || !ttsText.trim() || !clips.length || renderBusy}
               >
@@ -996,149 +1054,107 @@ const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => getInitialTtsP
                 </a>
               )}
             </div>
+            {renderStatus && <p className="status">{renderStatus}</p>}
+            {renderError && <p className="status error">{renderError}</p>}
             {ttsStatus && <p className="status">{ttsStatus}</p>}
             {ttsError && <p className="status error">{ttsError}</p>}
           </>
         ) : (
-          <div
-            className={`dropzone primary-drop ${audioDragActive ? 'is-dragging' : ''}`}
-            onClick={handleAudioZoneClick}
-            onDragOver={handleAudioDragOver}
-            onDragLeave={handleAudioDragLeave}
-            onDrop={handleAudioDrop}
-          >
-            <p className="dropzone-title">音声ファイルをここにドラッグ＆ドロップ</p>
-            <p className="dropzone-sub">またはクリックして選択（WAV / MP3 など）</p>
-            {audioFile ? (
-              <p className="selected-file">選択中: {audioFile.name}</p>
-            ) : (
-              <p className="selected-file muted">まだ選択されていません</p>
-            )}
-            <input ref={audioInputRef} type="file" accept="audio/*" onChange={handleAudioChange} hidden />
-          </div>
-        )}
-        {analysisBusy && <p className="status">音声を解析中...</p>}
-        {analysisError && <p className="status error">{analysisError}</p>}
-        {analysis && (
-          <div className="card-grid">
-            <div className="card">
-              <strong>長さ</strong>
-              <span>{formatSeconds(analysis.buffer.duration)}</span>
+          <>
+            <div
+              className={`dropzone primary-drop ${audioDragActive ? 'is-dragging' : ''}`}
+              onClick={handleAudioZoneClick}
+              onDragOver={handleAudioDragOver}
+              onDragLeave={handleAudioDragLeave}
+              onDrop={handleAudioDrop}
+            >
+              <p className="dropzone-title">音声ファイルをここにドラッグ＆ドロップ</p>
+              <p className="dropzone-sub">またはクリックして選択（WAV / MP3 など）</p>
+              {audioFile ? (
+                <p className="selected-file">選択中: {audioFile.name}</p>
+              ) : (
+                <p className="selected-file muted">まだ選択されていません</p>
+              )}
+              <input ref={audioInputRef} type="file" accept="audio/*" onChange={handleAudioChange} hidden />
             </div>
-            <div className="card">
-              <strong>セグメント数</strong>
-              <span>{analysis.segments.length}</span>
+            <div className="speech-actions">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!plan || !analysis || renderBusy}
+                onClick={handleRender}
+              >
+                {renderBusy ? 'レンダリング中...' : '動画を書き出す'}
+              </button>
+              {outputUrl && (
+                <a className="file-button download" href={outputUrl} download={outputName}>
+                  MP4 をダウンロード
+                </a>
+              )}
             </div>
-            <div className="card">
-              <strong>発話閾値</strong>
-              <span>{analysis.talkThreshold.toFixed(3)}</span>
-            </div>
-            <div className="card">
-              <strong>サイレンス閾値</strong>
-              <span>{analysis.silenceThreshold.toFixed(3)}</span>
-            </div>
-          </div>
-        )}
-        {analysis && (
-          <div className="table-wrapper scrollable">
-            <table>
-              <thead>
-                <tr>
-                  <th>種類</th>
-                  <th>開始</th>
-                  <th>長さ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.segments.map((segment) => (
-                  <tr key={segment.id}>
-                    <td>{segment.kind === 'talk' ? '発話' : '待機'}</td>
-                    <td>{formatSeconds(segment.start)}</td>
-                    <td>{formatSeconds(segment.duration)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            {renderStatus && <p className="status">{renderStatus}</p>}
+            {renderError && <p className="status error">{renderError}</p>}
+          </>
         )}
       </section>
 
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h2>2. モーションクリップ</h2>
-            <p>待機/遷移/発話(大/小)の各カテゴリに最低 1 本ずつ登録してください。</p>
-          </div>
-          {videoStatus && <span className="status">{videoStatus}</span>}
-        </div>
-        {videoError && <p className="status error">{videoError}</p>}
-        <div
-          className="dropzone small central-drop"
-          onClick={handleClipZoneClick}
-          onDragOver={handleClipDragOver}
-          onDrop={handleClipDrop}
-        >
-          <p className="dropzone-title">動画をまとめてドラッグ＆ドロップ</p>
-          <p className="dropzone-sub">またはクリックして追加（ZIP で一括アップロードも可能／あとでカテゴリを割り当て）</p>
-          <input
-            ref={clipInputRef}
-            type="file"
-            accept="video/mp4,video/webm,video/quicktime,application/zip,.zip"
-            multiple
-            hidden
-            onChange={handleClipChange}
-          />
-        </div>
-        {clips.length === 0 ? (
-          <p className="empty">動画がまだありません。複数ファイルをまとめて追加できます。</p>
-        ) : (
-          <div className="table-wrapper scrollable">
-            <table>
-              <thead>
-                <tr>
-                  <th>名前</th>
-                  <th>長さ</th>
-                  <th>種別</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {clips.map((clip) => (
-                  <tr key={clip.id}>
-                    <td>{clip.name}</td>
-                    <td>{formatSeconds(clip.duration)}</td>
-                    <td>
-                      <select value={clip.type} onChange={(event) => updateClipType(clip.id, event.target.value as MotionType)}>
-                        {Object.entries(motionLabels).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <button className="ghost" onClick={() => removeClip(clip.id)}>
-                        削除
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>3. タイムライン構築</h2>
-            <p>動画の長さを優先し、余剰分は次の発話開始を後ろにずらします。</p>
+            <h2>3. 解析＆タイムライン</h2>
+            <p>音声解析結果と生成されたタイムラインを確認します。</p>
           </div>
           {planError && <span className="status error">{planError}</span>}
         </div>
-        {!plan && <p className="empty">音声と動画をセットすると自動でプランが作成されます。</p>}
-        {plan && (
+        {analysisBusy && <p className="status">音声を解析中...</p>}
+        {analysisError && <p className="status error">{analysisError}</p>}
+        {!analysis ? (
+          <p className="empty">音声をセットすると解析結果が表示されます。</p>
+        ) : (
+          <>
+            <div className="card-grid">
+              <div className="card">
+                <strong>長さ</strong>
+                <span>{formatSeconds(analysis.buffer.duration)}</span>
+              </div>
+              <div className="card">
+                <strong>セグメント数</strong>
+                <span>{analysis.segments.length}</span>
+              </div>
+              <div className="card">
+                <strong>発話閾値</strong>
+                <span>{analysis.talkThreshold.toFixed(3)}</span>
+              </div>
+              <div className="card">
+                <strong>サイレンス閾値</strong>
+                <span>{analysis.silenceThreshold.toFixed(3)}</span>
+              </div>
+            </div>
+            <div className="table-wrapper scrollable">
+              <table>
+                <thead>
+                  <tr>
+                    <th>種類</th>
+                    <th>開始</th>
+                    <th>長さ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analysis.segments.map((segment) => (
+                    <tr key={segment.id}>
+                      <td>{segment.kind === 'talk' ? '発話' : '待機'}</td>
+                      <td>{formatSeconds(segment.start)}</td>
+                      <td>{formatSeconds(segment.duration)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        {!plan ? (
+          <p className="empty">音声と動画をセットすると自動でプランが作成されます。</p>
+        ) : (
           <>
             <div className="card-grid">
               <div className="card">
@@ -1154,7 +1170,7 @@ const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => getInitialTtsP
                 <span>{plan.talkPlans.length}</span>
               </div>
             </div>
-          <div className="table-wrapper scrollable">
+            <div className="table-wrapper scrollable">
               <table>
                 <thead>
                   <tr>
@@ -1211,27 +1227,6 @@ const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => getInitialTtsP
             )}
           </>
         )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <h2>4. レンダリング</h2>
-            <p>ffmpeg.wasm でブラウザ内エンコード。Cloudflare Pages 上でも同じ挙動です。</p>
-          </div>
-          {renderStatus && <span className="status">{renderStatus}</span>}
-        </div>
-        {renderError && <p className="status error">{renderError}</p>}
-      <div className="render-actions">
-        <button disabled={!plan || !analysis || renderBusy} onClick={handleRender}>
-          {renderBusy ? 'レンダリング中...' : '動画を書き出す'}
-        </button>
-        {outputUrl && (
-          <a className="file-button download" href={outputUrl} download={outputName}>
-            MP4 をダウンロード
-          </a>
-        )}
-      </div>
       </section>
     </div>
   )
