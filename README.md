@@ -1,6 +1,8 @@
 # Animation Streamer Builder
 
-ブラウザ上だけで「音声に合わせてモーションクリップを選択し、1 つのキャラクターが連続で喋っている動画」を生成するデモです。Cloudflare Pages にそのままデプロイできる React + Vite アプリとして構成しています。
+ブラウザ上だけで「音声に合わせてモーションクリップを選択し、1 つのキャラクターが連続で喋っている動画」を生成するWebアプリです。Cloudflare Pagesホスティングしています。
+
+https://animation-streamer-builder.0235.app
 
 ## 仕組み
 
