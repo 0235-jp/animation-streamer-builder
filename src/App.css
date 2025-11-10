@@ -511,6 +511,26 @@ textarea:disabled {
   margin-top: 0.5rem;
 }
 
+.tts-provider-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.tts-provider-button {
+  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  background: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+.tts-provider-button.is-active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.7);
+  color: #bfdbfe;
+}
+
 .tts-actions {
   display: flex;
   flex-wrap: wrap;
