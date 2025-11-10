@@ -50,6 +50,20 @@ const coerceTtsConfig = (raw: unknown): TtsUiConfig => {
   }
 }
 
+const persistTtsConfig = (config: TtsUiConfig) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(
+      TTS_STORAGE_KEY,
+      JSON.stringify({
+        tts: config,
+      })
+    )
+  } catch {
+    // ignore storage errors
+  }
+}
+
 const videoTypeManifestFile = 'video_types.json'
 
 const isMotionType = (value: unknown): value is MotionType =>
@@ -271,6 +285,14 @@ function App() {
   const [ttsConfig, setTtsConfig] = useState<TtsUiConfig>(defaultTtsConfig)
   const [pendingAutoRender, setPendingAutoRender] = useState(false)
 
+  const updateTtsConfig = (patch: Partial<TtsUiConfig>) => {
+    setTtsConfig((prev) => {
+      const next = { ...prev, ...patch }
+      persistTtsConfig(next)
+      return next
+    })
+  }
+
   useEffect(
     () => () => {
       clipUrls.current.forEach((url) => URL.revokeObjectURL(url))
@@ -293,26 +315,13 @@ function App() {
       if (!raw) return
       const parsed = JSON.parse(raw) as { tts?: unknown }
       if (parsed.tts) {
-        setTtsConfig(coerceTtsConfig(parsed.tts))
+        const next = coerceTtsConfig(parsed.tts)
+        setTtsConfig(next)
       }
     } catch {
       // 破損した JSON は無視
     }
   }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(
-        TTS_STORAGE_KEY,
-        JSON.stringify({
-          tts: ttsConfig,
-        })
-      )
-    } catch {
-      // ストレージが使えない環境では黙って諦める
-    }
-  }, [ttsConfig])
 
   useEffect(() => {
     if (!analysis || !clips.length) {
@@ -675,7 +684,7 @@ function App() {
               <input
                 type="text"
                 value={ttsConfig.endpoint}
-                onChange={(event) => setTtsConfig((prev) => ({ ...prev, endpoint: event.target.value }))}
+                onChange={(event) => updateTtsConfig({ endpoint: event.target.value })}
                 placeholder="http://localhost:50021"
                 disabled={ttsBusy}
               />
@@ -687,7 +696,7 @@ function App() {
                 min="0"
                 step="1"
                 value={ttsConfig.speakerId}
-                onChange={(event) => setTtsConfig((prev) => ({ ...prev, speakerId: event.target.value }))}
+                onChange={(event) => updateTtsConfig({ speakerId: event.target.value })}
                 disabled={ttsBusy}
               />
             </label>
